@@ -106,6 +106,12 @@ measles_path1 = rbind(parasite_prevalence_block, measles_prevalence_block ) %>%
 
 head(measles_path1)
 
+#### Pathogen-specific prevalence 
+prev_overall = measles_path1 %>%
+  mutate(prev = even_prevalence*90) %>%
+  distinct(pathogen, prev)
+head(prev_overall)
+
 #######################################################
 # Calculate Rao diversity at each block. 
 product_results = list()
@@ -136,6 +142,7 @@ for (i in 1:block_n) {
   # Store the results in the list
   product_results[[i]] <- products_df
 }
+
 
 
 # Combine all results into a single data frame
@@ -196,6 +203,7 @@ parasite_prevalence_block = left_join(parasite_denom, parasite_numer, by = c("pa
   mutate(pop_presence = sum(presence), even_prevalence = (pop_presence/non_na_count)/block_n) %>%
   dplyr::select(-non_na_count)
 head(parasite_prevalence_block)
+
 
 # Join measles vaccination and STH data. 
 measles_path2 = rbind(parasite_prevalence_block, measles_prevalence_block ) %>%
@@ -713,7 +721,7 @@ for(i in seq_along(methods)){
     scale_color_manual(values = c("Ascaris" = "black", "Rao" = "#FF4F00", "Measles" = "#0094C6")) +
     guides(color =guide_legend(title="Block prioritization strategy")) +
     geom_abline(slope=100/90, intercept = 0, lwd =1, lty = 2,  col = "gray72") +
-    ggtitle("      Ascaris")+
+    ggtitle("      Ascaris lumbricoides")+
     theme(legend.position = "none") +
     scale_x_continuous(breaks = c(0, 15, 30, 45, 60, 75, 90)) +
     theme(axis.text = element_text(size = 11, color = "black"),
@@ -784,7 +792,7 @@ for(i in seq_along(methods)){
     scale_color_manual(values = c("T. trichuris" = "black", "Rao" = "#FF4F00", "Measles" = "#0094C6")) +
     guides(color =guide_legend(title="Block prioritization strategy")) +
     geom_abline(slope=100/90, intercept = 0, lwd =1, lty = 2,  col = "gray72") +
-    ggtitle("      Trichuris")+
+    ggtitle("      Trichuris trichiura")+
     theme(legend.position = "none") +
     scale_x_continuous(breaks = c(0, 15, 30, 45, 60, 75, 90)) +
     theme(axis.text = element_text(size = 11, color = "black"),
@@ -908,28 +916,61 @@ method4_efficiency
 print(block_50[[1]])
 print(block_50[[2]])
 
+method1_efficiency <- efficiency_list[[1]]
+method1_efficiency 
 
-#### legend 
-head(parasite_prevalence_block)
+#method2_efficiency <- plot_grid(efficiency_list = efficiency_list[[2]], ncol = 2)
+#method2_efficiency
 
+
+# make legend for strategy 
 legend2 = ggplot(data = parasite_prevalence_block) +
   geom_line(aes(x = block_r, y = presence, col = "Measles-motivated"), cex = 2) + 
   geom_line(aes(x = block_r, y = fraction, col = "Single-pathogen motivated"), cex = 2) + 
   geom_line(aes(x = block_r, y = even_prevalence, col = "Rao-motivated"), cex = 2) + 
   geom_line(aes(x = block_r, y = pop_presence* even_prevalence, col = "Single-pathogen motivated"), cex = 2) + 
   scale_color_manual(values = c( "Rao-motivated" = "#FF4F00", 
-                                "Measles-motivated" = "#0094C6", "Single-pathogen motivated" = "black")) +
+                                 "Measles-motivated" = "#0094C6", "Single-pathogen motivated" = "black")) +
   guides(color =guide_legend(title="Strategy"))  +
-  theme(legend.position = "right") +
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size = 14), 
+        legend.title = element_text(size = 14, color = "black"))+ 
   geom_blank() 
 legend2
+legend_only2 <- gtable::gtable_filter(ggplotGrob(legend2), "guide-box")
 
-leg = get_legend(legend2)
-grid.newpage()
-legend_only = grid.draw(leg)
 
-plot_grid(method1_efficiency , legend_only, rel_widths = c(1, .2), labels = "b")
-legend_only = grid.draw(leg)
+fig2_bangl_eff <- cowplot::plot_grid(
+  method1_efficiency,   # Main plot
+  legend_only2,           # Extracted legend
+  ncol = 1,              # Layout with one column
+  rel_heights = c(1, 0.1)  # Adjust relative heights to make space for the legend
+)
+
+fig2_bangl_eff
+
+
+#### legend 
+#head(parasite_prevalence_block)
+
+#legend2 = ggplot(data = parasite_prevalence_block) +
+#  geom_line(aes(x = block_r, y = presence, col = "Measles-motivated"), cex = 2) + 
+#  geom_line(aes(x = block_r, y = fraction, col = "Single-pathogen motivated"), cex = 2) + 
+#  geom_line(aes(x = block_r, y = even_prevalence, col = "Rao-motivated"), cex = 2) + 
+#  geom_line(aes(x = block_r, y = pop_presence* even_prevalence, col = "Single-pathogen motivated"), cex = 2) + 
+#  scale_color_manual(values = c( "Rao-motivated" = "#FF4F00", 
+#                                "Measles-motivated" = "#0094C6", "Single-pathogen motivated" = "black")) +
+#  guides(color =guide_legend(title="Strategy"))  +
+#  theme(legend.position = "right") +
+#  geom_blank() 
+#legend2
+
+#leg = get_legend(legend2)
+#grid.newpage()
+#legend_only = grid.draw(leg)
+
+#plot_grid(method1_efficiency , legend_only, rel_widths = c(1, .2), labels = "b")
+#legend_only = grid.draw(leg)
 
 
 
@@ -1060,18 +1101,18 @@ me_boxplot = measles_sim %>%
 head(me_boxplot)
 
 as_boxplot = ascaris_sim %>%
-  mutate(pathogen = "Ascaris") %>%
+  mutate(pathogen = "Ascaris lumbricoides") %>%
   mutate(Rao = 36) %>%
   mutate(Optimal = 31) %>%
   mutate(Measles = 46) 
 head(as_boxplot )
 
 tt_boxplot = trichurus_sim %>%
-  mutate(pathogen = "Trichuris") %>%
+  mutate(pathogen = "Trichuris trichiura") %>%
   mutate(Rao = 19) %>%
   mutate(Optimal = 14) %>%
   mutate(Measles = 40) 
-head(strong_boxplot)
+head(tt_boxplot)
 
 hw_boxplot = hookworm_sim %>%
   mutate(pathogen = "Hookworm") %>%
@@ -1107,16 +1148,15 @@ target_goal = ggplot(data = me_boxplot) +
                         "Measles-motivated" = "#0094C6" )) +
   guides(color =guide_legend(title="Strategy")) +
   xlab("Pathogen") +
-  ggtitle("c.") +
-  theme(legend.position = "bottom") +
-  theme(axis.text = element_text(size = 13, color = "black"),
+  ggtitle("b.") +
+  theme(axis.text = element_text(size = 11, color = "black"),
         axis.title = element_text(size = 14, color = "black"),
         axis.line = element_blank(),
         axis.ticks = element_line(color = "black"),
         plot.title = element_text(colour = "black", size = 13.5, face = "bold"),
         plot.title.position = "plot",
         plot.subtitle = element_text(colour = "black", size = 12.5),
-        legend.position = "right",
+        legend.position = "none",
         legend.key.width = unit(0.5, "cm"),
         legend.text = element_text(size = 13, color = "black"),
         legend.title = element_text(size = 14, color = "black"),
@@ -1297,13 +1337,13 @@ quant_975 = quantile(block_list$block_vector, probs = quantiles[3])
 mean = c( 35, 31, 23, 19, 41, 38, 19, 15 )
 lower = c(32, 28, 19, 16, 39, 36, 14, 12 )
 upper = c(39, 33, 27, 22, 43, 39, 25, 17 )
-path = c( "Ascaris", "Ascaris", "Hookworm", "Hookworm", 
-          "Measles", "Measles", "Trichuris", "Trichuris")
+path = c( "Ascaris lumbricoides", "Ascaris lumbricoides", "Hookworm", "Hookworm", 
+          "Measles", "Measles", "Trichuris trichiura", "Trichuris trichiura")
 strat = c( "Rao-motivated", "Single-pathogen motivated", "Rao-motivated", "Single-pathogen motivated", "Rao-motivated", "Single-pathogen motivated", "Rao-motivated", "Single-pathogen motivated")
 
 
 paths = data.frame(mean, lower, upper, path, strat)
-paths$path = factor(paths$path, levels = c( "Ascaris", "Hookworm", "Measles", "Trichuris"))
+paths$path = factor(paths$path, levels = c( "Ascaris lumbricoides", "Hookworm", "Measles", "Trichuris trichiura"))
 paths$strat = factor(paths$strat, levels = c("Single-pathogen motivated", "Rao-motivated"))
 bootstrap = ggplot(data = paths, aes(x = path, y = mean, col = strat)) + 
   theme_light()+
@@ -1314,8 +1354,8 @@ bootstrap = ggplot(data = paths, aes(x = path, y = mean, col = strat)) +
   geom_errorbar(aes(ymin=lower, ymax=upper), width=.4,
                 position=position_dodge(.5), lwd= 1) + 
   xlab("Pathogen") +
-  ggtitle("d.") +
-  theme(axis.text = element_text(size = 13, color = "black"),
+  ggtitle("c.") +
+  theme(axis.text = element_text(size = 11, color = "black"),
         axis.title = element_text(size = 14, color = "black"),
         axis.line = element_blank(),
         axis.ticks = element_line(color = "black"),
@@ -1336,8 +1376,13 @@ bootstrap = ggplot(data = paths, aes(x = path, y = mean, col = strat)) +
   ylim(c(0, 80))
 bootstrap
 
-figure_2_bangl = plot_grid(target_goal, bootstrap, rel_widths = c(.7, .45))
+figure_2_bangl = plot_grid(target_goal, bootstrap, rel_widths = c(.75, .75))
 figure_2_bangl
+
+
+plot_grid(fig2_bangl_eff, figure_2_bangl, labels = c("a"), 
+          nrow = 2, rel_heights =c(.5, .3))
+# 1200 x 1300
 
 ###########################################################
 # Map it out now
@@ -1379,7 +1424,6 @@ countries <- ne_countries(scale = "medium", returnclass = "sf")
 bangl_map <- countries[countries$name == "Bangladesh", ]
 
 
-
 # ######################################
 # Rao 
 ########################################
@@ -1409,7 +1453,7 @@ for(i in seq_along(methods)){
   
   # Create bonding box from the shapefile. 
   b_boxgrid <- st_make_grid(admin_b_study,
-                            n=c(100,100), #this is the number of rows and col to split the shapefile into. 
+                            n=c(300,300), #this is the number of rows and col to split the shapefile into. 
                             what = "centers" #this means that the function will return the center points of each grid, alternatively the shape file would be returned. 
   )
   
@@ -1421,7 +1465,7 @@ for(i in seq_along(methods)){
     st_transform("+proj=utm +zone=46 +datum=WGS84 +units=km") # transforms the spatial data from WGS84 coordinates (longitude and latitude) to UTM coordinates
   
   # Identify a buffer of 10 km (based on Arnold et al. 2024).
-  cl_buff <- st_buffer(dbgps_sf_utm, dist= 35) %>%  # creates a buffer of 10km around each center 
+  cl_buff <- st_buffer(dbgps_sf_utm, dist= 10) %>%  # creates a buffer of 10km around each center 
     summarise(geometry = st_union(geometry)) %>%  # identify their union, then convert to a single polygon that merges overlapping areas of the buffers into one continuous polygon.
     st_cast("POLYGON") %>% # set the CRS back to WGS84 lat and long coordinates 
     st_transform(crs=4326) # this transforms the geometry back to the WGS84 coordinate reference system (EPSG:4326), which uses degrees of latitude and longitude. 
@@ -1521,7 +1565,7 @@ rao_plot
 
 
 ### make left panel of plot
-multi_bangl =plot_grid(rao_plot, cor, ncol = 1, rel_heights = c(.5, .2), labels  = c("d", "e"))
+multi_bangl =plot_grid(rao_plot, cor, ncol = 1, rel_heights = c(.5, .2), labels  = c("a", "b"))
 multi_bangl
 
 
@@ -1563,7 +1607,7 @@ bangladesh_locations = rbind(parasite, measles) %>%
 head(bangladesh_locations)
 
 maps_i = c( "al", "hw", "tt", "measles")
-path_names = c( "Ascaris", "Hookworm",  "Trichuris", "Measles")
+path_names = c( "Ascaris lumbricoides", "Hookworm",  "Trichuris trichiura", "Measles")
 legend_names = c("Proportion infected (%)", "Proportion infected (%)", "Proportion infected (%)", "Fraction unvaccinated (%)")
 
 plot_list <- list()
@@ -1589,7 +1633,7 @@ for(i in 1:length(maps_i)) {
   
   # Create bonding box from the shapefile. 
   b_boxgrid <- st_make_grid(admin_b_study,
-                            n=c(100,100), #this is the number of rows and col to split the shapefile into. 
+                            n=c(300,300), #this is the number of rows and col to split the shapefile into. 
                             what = "centers" #this means that the function will return the center points of each grid, alternatively the shape file would be returned. 
   )
   
@@ -1679,13 +1723,13 @@ for(i in 1:length(maps_i)) {
 }
 
 
-inf_plot <- plot_grid(plotlist = plot_list, ncol = 2, labels = "f")
+inf_plot <- plot_grid(plotlist = plot_list, ncol = 2, labels = "c")
 inf_plot
 
 figure_1_bangl = plot_grid(multi_bangl, inf_plot)
 figure_1_bangl
 
-
+# 1400 x 1000
 
 
 

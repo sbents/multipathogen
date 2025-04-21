@@ -87,6 +87,12 @@ parasite_prevalence_block = left_join(parasite_denom, parasite_numer, by = c("pa
   dplyr::select(-non_na_count) %>% ungroup()
 head(parasite_prevalence_block)
 
+#######
+prev_overall = parasite_prevalence_block %>%
+  mutate(prev = even_prevalence*100) %>%
+  distinct(pathogen, prev)
+head(prev_overall)
+
 
 #######################################################
 # Calculate Rao diversity at each block. 
@@ -140,6 +146,7 @@ block_subset = parasite_prevalence_block %>%
 
 even_prevalences = block_subset$even_prevalence
 unique_combinations <- t(combn(even_prevalences, 2, simplify = TRUE))  # Get pairs (no duplicates)
+
 
 # Compute products for each pair
 products <- apply(unique_combinations, 1, prod)
@@ -648,10 +655,12 @@ print(block_50[[1]])
 print(block_50[[2]])
 
 # Plot efficiency of single-pathogen strategies vs rao strategies. 
-method1_efficiency <- plot_grid(efficiency_list = efficiency_list[[1]], ncol = 2)
+#method1_efficiency <- plot_grid(efficiency_list = efficiency_list[[1]], ncol = 2)
+method1_efficiency <- efficiency_list[[1]]
 method1_efficiency 
-method2_efficiency <- plot_grid(efficiency_list = efficiency_list[[2]], ncol = 2)
-method2_efficiency
+
+#method2_efficiency <- plot_grid(efficiency_list = efficiency_list[[2]], ncol = 2)
+#method2_efficiency
 
 
 # make legend for strategy 
@@ -664,17 +673,37 @@ legend1 = ggplot(data = parasite_prevalence_block) +
   scale_color_manual(values = c("Malaria vivax-motivated" = "#F0A20E" , "Rao-motivated" = "#FF4F00", "Malaria falciparum-motivated" = "#004B6F",
                                 "LF-motivated" = "#0094C6", "Single-pathogen motivated" = "black")) +
   guides(color =guide_legend(title="Strategy"))  +
-  theme(legend.position = "right") +
+  theme(legend.position = "bottom", 
+        legend.text = element_text(size = 14), 
+        legend.title = element_text(size = 14, color = "black"))+ 
   geom_blank() 
 legend1
+legend_only <- gtable::gtable_filter(ggplotGrob(legend1), "guide-box")
 
+fig2_cam_eff <- cowplot::plot_grid(
+  method1_efficiency,   # Main plot
+  legend_only,           # Extracted legend
+  ncol = 1,              # Layout with one column
+  rel_heights = c(1, 0.1)  # Adjust relative heights to make space for the legend
+)
 
-leg = get_legend(legend1)
-grid.newpage()
-legend_only = grid.draw(leg)
+fig2_cam_eff
 
-plot_grid(method1_efficiency , legend_only, rel_widths = c(1, .2), labels = "a")
-legend_only = grid.draw(leg)
+# Display the final plot
+
+#leg = get_legend(legend1)
+#legend_only <- ggpubr::as_ggplot(leg) + theme(plot.margin = margin(0,0,0,0))
+#legend_only <- cowplot::get_legend(legend1)
+#legend_only
+#grid.newpage()
+#legend_only = grid.draw(leg)
+#plot_grid(method1_efficiency , legend_only, rel_widths = c(1, .2), labels = "a")
+#legend_only = grid.draw(leg)
+
+# was patchwork
+#fig2_cam_eff <- method1_efficiency + legend_only + 
+#  plot_layout(widths = c(.03, .1)) & 
+#  theme(legend.position = "bottom")
 
 
 
@@ -866,16 +895,16 @@ target_goal = ggplot(data = mv_boxplot) +
                                "Malaria falciparum-motivated" = "#004B6F", "LF-motivated" = "#0094C6" )) +
   guides(color =guide_legend(title="Strategy")) +
   xlab("Pathogen") +
-  ggtitle("a.") +
-  theme(legend.position = "bottom") +
-  theme(axis.text = element_text(size = 13, color = "black"),
+  ggtitle("b.") +
+  theme(legend.position = "none") +
+  theme(axis.text = element_text(size = 11, color = "black"),
         axis.title = element_text(size = 14, color = "black"),
         axis.line = element_blank(),
         axis.ticks = element_line(color = "black"),
         plot.title = element_text(colour = "black", size = 13.5, face = "bold"),
         plot.title.position = "plot",
         plot.subtitle = element_text(colour = "black", size = 12.5),
-        legend.position = "right",
+        legend.position = "none",
         legend.key.width = unit(0.5, "cm"),
         legend.text = element_text(size = 13, color = "black"),
         legend.title = element_text(size = 14, color = "black"),
@@ -902,6 +931,7 @@ path = c( "Malaria vivax", "Malaria vivax", "Malaria falciparum", "Malaria falci
           "Strongyloides", "Strongyloides", "LF", "LF")
 strat = c( "Rao-motivated", "Single-pathogen motivated", "Rao-motivated", "Single-pathogen motivated", "Rao-motivated", "Single-pathogen motivated", "Rao-motivated", "Single-pathogen motivated")
 
+
 paths = data.frame(mean, lower, upper, path, strat)
 paths$path = factor(paths$path, levels = c( "LF", "Malaria falciparum", "Malaria vivax", "Strongyloides"))
 
@@ -915,8 +945,8 @@ bootstrap = ggplot(data = paths, aes(x = path, y = mean, col = strat)) +
   geom_errorbar(aes(ymin=lower, ymax=upper), width=.4,
                 position=position_dodge(.5), lwd= 1) + 
   xlab("Pathogen") +
-  ggtitle("b.") +
-  theme(axis.text = element_text(size = 13, color = "black"),
+  ggtitle("c.") +
+  theme(axis.text = element_text(size = 11, color = "black"),
         axis.title = element_text(size = 14, color = "black"),
         axis.line = element_blank(),
         axis.ticks = element_line(color = "black"),
@@ -937,8 +967,8 @@ bootstrap = ggplot(data = paths, aes(x = path, y = mean, col = strat)) +
   ylim(c(0, 80))
 bootstrap
 
-figure_2_cam = plot_grid(target_goal, bootstrap, rel_widths = c(.7, .45))
-
+figure_2_cam = plot_grid(target_goal, bootstrap, rel_widths = c(.75, .65))
+figure_2_cam 
 
 
 ########## Map out- Figure 1 #################################################################
@@ -956,6 +986,8 @@ cambodia_case =
   summarize(across(tetanus_unprotected:lymph_any, ~sum(.x, na.rm = TRUE))) %>%
   mutate(across(tetanus_unprotected:lymph_any, ~ .x / count_n))
 
+head(gps_cambodia)
+
 # gps coordinates with seropositivity 
 cambodia_locations = left_join(cambodia_case, gps_dat %>% mutate(psuid = psuid + 1), by = "psuid") %>%
   left_join(gps_cambodia, by = "dhsclust" ) %>%
@@ -964,9 +996,7 @@ cambodia_locations = left_join(cambodia_case, gps_dat %>% mutate(psuid = psuid +
   left_join(method1, by = "psuid") 
 head(cambodia_locations)
 
-
 # Correlation between pathogens
-library(wesanderson)
 pal <- wes_palette("Darjeeling1", 100, type = "continuous")
 
 corr_plot = cambodia_locations %>%
@@ -1129,7 +1159,7 @@ for(i in 1:length(maps_i)) {
                   mutate(value = replace(value, value > 100, 100))) +  
     geom_tile(aes(x = x, y = y, fill = value), na.rm = TRUE) +
     geom_tile(aes(x = x, y = y, fill = value), na.rm = TRUE) +
-  #  geom_sf(data = cambodia_map, fill = NA, color = "black", size = 15, lwd = 1) +  # Black border for country
+    geom_sf(data = cambodia_map, fill = NA, color = "black", size = 15, lwd = 1) +  # Black border for country
     ggtitle(path_names[i]) +  # Now using path_names[i] directly
     coord_sf(crs = 4326) +
     #  scale_fill_viridis(option = "D", direction = 1,
@@ -1269,7 +1299,7 @@ for(i in 1:length(maps_i)) {
   map <- ggplot(data = b_preds_rao_raster2 %>%
                   drop_na(value_exp)) +  
     geom_tile(aes(x = x, y = y, fill = value_exp), na.rm = TRUE) +
-  #  geom_sf(data = cambodia_map, fill = NA, color = "black", size = 15, lwd = 1) +  # Black border for country
+    geom_sf(data = cambodia_map, fill = NA, color = "black", size = 15, lwd = 1) +  # Black border for country
     ggtitle(path_names[i]) +  # Now using path_names[i] directly
     coord_sf(crs = 4326) +
     scale_fill_gradientn(colours = pal,
@@ -1340,10 +1370,23 @@ plot_grid(figure_1_cam, figure_1_bangl, ncol = 1)
 
 # Figure 2 
 
+plot_grid(fig2_cam_eff, figure_2_cam, labels = c("a"), 
+          nrow = 2, rel_heights =c(.5, .3))
+# 1200 x 1300
+
+
+
+
+
 
 # Figure 3
+figure_2_cam
 plot_grid(figure_2_cam, figure_2_bangl, 
           ncol = 1)
+
+
+
+
 
 
 
