@@ -25,9 +25,9 @@ Demo
 
 The analysis is separated into four R scripts. 
 
-bangl_manuscript_analysis: R code required to calculate and map multipathogen burden using Bangladesh multipathogen survelliance data. Expected run time: 25 minutes.
+bangl_manuscript_analysis: R code required to calculate and map multipathogen burden and assess strategy efficiency using Bangladesh multipathogen survelliance data. Expected run time: 25 minutes.
 
-cambodia_manuscript_analysis: R code required to calculate and map multipathogen burden using Cambodia multiplex serological data. Expected run time: 25 minutes.
+cambodia_manuscript_analysis: R code required to calculate and map multipathogen burden and assess strategy efficiency using Cambodia multiplex serological data. Expected run time: 25 minutes.
 
 compare_metrics: R code to compare efficiency of strategies guided by Shannon, Gini-Simpson, and Rao diversity. Expected run time: 5 minutes.
 
