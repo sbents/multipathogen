@@ -15,37 +15,61 @@ source(here("0-functions.R"))
 
 #######################################################
 # Load disease data. 
-sth = readr::read_csv(file = here("data/bangl/parasites/untouched", "bangl_analysis_parasite.csv"))%>%
+sth = read.csv(file = here("data/bangl/parasites/untouched", "bangl_analysis_parasite.csv")) %>%
   dplyr::select(dataid, clusterid, block, personid, tr, al, tt, giar, hw, sth) 
 
-prot = readr::read_csv(file = here("data/bangl/parasites/untouched", "washb-bangladesh-protozoa-public.csv")) %>%
+# Check age distribution
+sth_age = read.csv(file = here("data/bangl/parasites/untouched", "bangl_analysis_parasite.csv")) %>%
+  filter(tr == "Control" | tr == "Nutrition") 
+head(sth_age)
+summary(sth$agey)
+
+# Load protozoan data 
+prot = read.csv(file = here("data/bangl/parasites/untouched", "washb-bangladesh-protozoa-public.csv")) %>%
   dplyr::select(dataid, clusterid, block, personid, tr, poseh , poscr) %>% #entamoeba, crypto
   mutate(poscr = replace(poscr, poscr == 9, NA)) %>% # 9 indicates the sample was missing 
   mutate(poseh = replace(poseh, poseh == 9, NA)) 
 
-# Load measles data from final vacciantion records. 
-vax = readr::read_csv(file = here("data/bangl/vaccination/final", "washb_bangl_vax_records_midline.csv"))
+# Load measles data from final vaccination records, # age in days is in anthropogegy  
+vax = read.csv(file = here("data/bangl/vaccination/final", "washb_bangl_vax_records_midline.csv"))
+
+# Load this in to determine age, age needs to be at midline survey
+diarrhea = read.csv(file = here("data/bangl/diarrhea", "washb-bangladesh-diar.csv")) %>%
+  filter(svy == 1) %>%
+  dplyr::select(dataid, ageyrs)
+head(diarrhea)
+
+age_measles = left_join(vax, diarrhea, by = "dataid")
+summary(age_measles$ageyrs)
 
 # Load public id and gps data
-public_ids = readr::read_csv(file = here("data/bangl/public_ids", "public-ids.csv"))
+public_ids = read.csv(file = here("data/bangl/public_ids", "public-ids.csv"))
+# Save median latitude and longitude 
 gps_dat = read_dta(file = here("data/bangl/gps/untouched", "6. WASHB_Baseline_gps.dta")) %>%
-  left_join(public_ids, by = "dataid") %>%
+  mutate(dataid = as.numeric(dataid)) %>% # had to add later? 
+  left_join(public_ids, by = "dataid") %>% 
   dplyr::select(block, block_r, qgpslong, qgpslat) %>%
   group_by(block) %>%
   mutate(med_qgpslong = median(qgpslong), med_qgpslat = median(qgpslat)) %>%
   distinct(block, block_r, med_qgpslong, med_qgpslat)
-
 
 #######################################################
 # Join disease data and filter for control clusters. 
 disease_dat = left_join(sth, prot, by = c("dataid", "clusterid", "block", "tr", "personid"))  %>%# %>%
   filter(tr == "Control" | tr == "Nutrition") 
 block_n = length(unique(disease_dat$block))
-head(disease_dat)
 
+# People per cluster
+people_per_cluster = disease_dat %>%
+  mutate(person = 1) %>%
+  group_by(block) %>%
+  count(person)
+summary(people_per_cluster$n)
 
 
 #######################################################
+#######################################################
+# ANALYSIS 
 #######################################################
 # Method 1: Population-level denominator and assess each STH independently. 
 
@@ -102,15 +126,41 @@ head(measles_prevalence_block)
 
 # Join measles vaccination and STH data. 
 measles_path1 = rbind(parasite_prevalence_block, measles_prevalence_block ) %>%
-  arrange(block_r)
-
+  arrange(block_r) %>%
+  ungroup()
 head(measles_path1)
 
-#### Pathogen-specific prevalence 
+# plot cluster level distribution of prevalences 
+histo = measles_path1 %>%
+  mutate(pathogen = replace(pathogen, pathogen == "al", "Ascaris lumbricoides")) %>%
+  mutate(pathogen = replace(pathogen, pathogen == "hw", "Hookworm")) %>%
+  mutate(pathogen = replace(pathogen, pathogen == "measles", "Measles")) %>%
+  mutate(pathogen = replace(pathogen, pathogen == "tt", "Trichuris trichiura"))
+ggplot(data = histo ) +
+  geom_histogram(aes(x = fraction), fill = "blue4") +
+  facet_wrap(vars(pathogen)) + theme_bw()+
+  theme(axis.text = element_text(size = 11, color = "black"),
+        axis.title = element_text(size = 14, color = "black"),
+        axis.line = element_blank(),
+        axis.ticks = element_line(color = "black"),
+        plot.title = element_text(colour = "black", size = 13.5, face = "bold"),
+        plot.title.position = "plot",
+        plot.subtitle = element_text(colour = "black", size = 12.5),
+        legend.position = "none",
+        legend.key.width = unit(0.5, "cm"),
+        legend.text = element_text(size = 13, color = "black"),
+        legend.title = element_text(size = 14, color = "black"),
+        strip.text = element_text(colour = "black", size = 16, hjust = 0),
+        strip.background = element_rect(colour="white", fill="white"),
+        panel.border = element_rect(colour = "black", fill=NA)) +
+  ylab("Count") + xlab("Prevalence") +
+  ggtitle("Bangladesh")
+
+
+# Estimate pathogen-specific prevalence 
 prev_overall = measles_path1 %>%
   mutate(prev = even_prevalence*90) %>%
   distinct(pathogen, prev)
-head(prev_overall)
 
 #######################################################
 # Calculate Rao diversity at each block. 
@@ -160,7 +210,6 @@ block_subset = measles_path1 %>%
   ungroup() %>% filter(block_r == 1) %>%
   dplyr::select(even_prevalence_mirrored, even_prevalence)
 
-
 even_prevalences = block_subset$even_prevalence
 unique_combinations <- t(combn(even_prevalences, 2, simplify = TRUE))  # Get pairs (no duplicates)
 
@@ -172,7 +221,6 @@ null_rao = sum(products)
 method1 = block_prevalence_final %>%
   mutate(rao = product/null_rao) %>%
   left_join(gps_dat, by = "block_r")
-summary(method1$rao)
 
 #######################################################
 #######################################################
@@ -204,10 +252,10 @@ parasite_prevalence_block = left_join(parasite_denom, parasite_numer, by = c("pa
   dplyr::select(-non_na_count)
 head(parasite_prevalence_block)
 
-
 # Join measles vaccination and STH data. 
 measles_path2 = rbind(parasite_prevalence_block, measles_prevalence_block ) %>%
-  arrange(block_r)
+  arrange(block_r) %>%
+  ungroup()
 
 #######################################################
 # Calculate Rao diversity at each block. 
@@ -284,6 +332,7 @@ parasite_denom = disease_dat  %>%
   filter(pathogen != "sth" & pathogen != "giar" & pathogen != "poscr" & pathogen != "poseh")
 head(parasite_denom)
 
+
 # Number of total parasite instances by block
 parasite_numer = disease_dat %>%
  # filter(tr == "Control") %>%
@@ -326,7 +375,8 @@ head(measles_prevalence_block)
 
 ### Join measles and STH 
 measles_path3 = rbind(parasite_prevalence_block, measles_prevalence_block ) %>%
-  arrange(block_r)
+  arrange(block_r) %>%
+  ungroup()
 head(measles_path3)
 
 #######################################################
@@ -421,7 +471,8 @@ parasite_prevalence_block = left_join(parasite_denom, parasite_numer, by = c("pa
 
 ### Join measles and STH 
 measles_path4 = rbind(parasite_prevalence_block, measles_prevalence_block ) %>%
-  arrange(block_r)
+  arrange(block_r) %>%
+  ungroup()
 
 #######################################################
 # Calculate Rao diversity at each block. 
@@ -482,6 +533,7 @@ method4 = block_prevalence_final %>%
   mutate(rao = product/null_rao) %>%
   left_join(gps_dat, by = "block_r")
 summary(method4$rao)
+
 
 #######################################################
 # Map methods visually.
@@ -596,18 +648,15 @@ for(i in seq_along(methods)){
 method_plot <- plot_grid(plotlist = plot_list, ncol = 2)
 method_plot
 
-#######################################################
-
-
 # Compare method efficiency. 
 #######################################################
-pt = .5
+#######################################################
+pt = .75 #Disease targeting goal
 block_50 <- list()
 efficiency_list <- list()
-#methods = list(method1 = method1, method2 = method2, method3 = method3, method4 = method4)
-methods = list(method1 = method1)
-head(method1)
 
+# Assess only for the first method 
+methods = list(method1 = method1)
 
 for(i in seq_along(methods)){
   
@@ -624,8 +673,7 @@ for(i in seq_along(methods)){
     mutate(block_label = seq(1, block_n, 1)) %>%
     mutate(above = ifelse(target < pt, 1, 2))
   
-  # order_measles = print(measles_motivated$block_r)
-  
+  order_measles = print(measles_motivated$block_r)
   measles_50 <- which(measles_motivated$above == 2)[1]
   
   rao_measles_motivated = compare_strategy %>% 
@@ -640,12 +688,28 @@ for(i in seq_along(methods)){
   
   measles_rao_50 <- which(rao_measles_motivated$above == 2)[1]
   
+  head(method1_rao)
+  # wealth
+  measles_wealth_motivated = compare_strategy %>% 
+    filter(pathogen == "measles") %>%
+    left_join(method1_rao, by = "block_r") %>%
+    arrange(mean_wealthscore) %>%
+    mutate(total_fraction = sum(fraction)) %>%
+    mutate(cum = cumsum(fraction)) %>%
+    mutate(target = cum/total_fraction) %>%
+    mutate(block_label = seq(1, block_n, 1)) %>%
+    mutate(above = ifelse(target < pt, 1, 2))
+  
+   print( head(rao_wealth_motivated))
+  
   measles = ggplot(data = measles_motivated, aes(x = block_label/block_n*90, y = target*100)) +
     geom_line(aes(col = "Measles"), cex = 2) +
     geom_line(data = rao_measles_motivated, aes(x = block_label/block_n*90, y = target*100, col = "Rao"), cex = 2) + 
+  #  geom_line(data = measles_wealth_motivated, aes(x = block_label/block_n*90, y = target*100, col = "Wealth"), cex = 2) + # can remove 
     theme_bw() +
     xlab("Clusters targeted") +
     ylab("Percent vaccinated (%)") +
+   # scale_color_manual(values = c("Measles" = "black", "Rao" = "#FF4F00")) +
     scale_color_manual(values = c("Measles" = "black", "Rao" = "#FF4F00")) +
     guides(color =guide_legend(title="Block prioritization strategy")) +
     geom_abline(slope=100/90, intercept = 0, lwd =1, lty = 2,  col = "gray72") +
@@ -711,10 +775,22 @@ for(i in seq_along(methods)){
   
   ascaris_measles_50 <- which(ascaris_measles_motivated$above == 2)[1]
   
+  ascaris_wealth_motivated = compare_strategy %>% 
+    filter(pathogen == "al") %>%
+    left_join(method1_rao, by = "block_r") %>%
+    arrange(mean_wealthscore) %>%
+    mutate(total_fraction = sum(fraction)) %>%
+    mutate(cum = cumsum(fraction)) %>%
+    mutate(target = cum/total_fraction) %>%
+    mutate(block_label = seq(1, block_n, 1)) %>%
+    mutate(above = ifelse(target < pt, 1, 2))
+  
+  
   ascaris = ggplot(data = ascaris_motivated, aes(x = block_label/block_n*90, y = target*100)) +
     geom_line(aes(col = "Ascaris"), cex = 2) +
     geom_line(data = rao_ascaris_motivated, aes(x = block_label/block_n*90, y = target*100, col = "Rao"), cex = 2) + 
     geom_line(data = ascaris_measles_motivated, aes(x = block_label/block_n*90, y = target*100, col = "Measles"), cex = 2) + 
+   # geom_line(data = ascaris_wealth_motivated, aes(x = block_label/block_n*90, y = target*100, col = "Wealth"), cex = 2) + # can remove 
     theme_bw() +
     xlab("Clusters targeted") +
     ylab("Percent disease targeted (%)") +
@@ -782,10 +858,21 @@ for(i in seq_along(methods)){
   
   trichurus_measles_50 <- which(trichurus_measles_motivated$above == 2)[1]
   
+  trichurus_wealth_motivated = compare_strategy %>% 
+    filter(pathogen == "tt") %>%
+    left_join(method1_rao, by = "block_r") %>%
+    arrange(mean_wealthscore) %>%
+    mutate(total_fraction = sum(fraction)) %>%
+    mutate(cum = cumsum(fraction)) %>%
+    mutate(target = cum/total_fraction) %>%
+    mutate(block_label = seq(1, block_n, 1)) %>%
+    mutate(above = ifelse(target < pt, 1, 2))
+  
   trichurus = ggplot(data = trichurus_motivated, aes(x = block_label/block_n*90, y = target*100)) +
     geom_line(aes(col = "T. trichuris"), cex = 2) +
     geom_line(data = rao_trichurus_motivated, aes(x = block_label/block_n*90, y = target*100, col = "Rao"), cex = 2) + 
     geom_line(data = trichurus_measles_motivated, aes(x = block_label/block_n*90, y = target*100, col = "Measles"), cex = 2) + 
+  #  geom_line(data = trichurus_wealth_motivated, aes(x = block_label/block_n*90, y = target*100, col = "Wealth"), cex = 2) + 
     theme_bw() +
     xlab("Clusters targeted") +
     ylab("Percent disease targeted (%)") +
@@ -853,13 +940,27 @@ for(i in seq_along(methods)){
   
   hookworm_measles_50 <- which(hookworm_measles_motivated$above == 2)[1]
   
+  # wealth
+  hookworm_wealth_motivated = compare_strategy %>% 
+    filter(pathogen == "hw") %>%
+    left_join(method1_rao, by = "block_r") %>%
+    arrange(mean_wealthscore) %>%
+    mutate(total_fraction = sum(fraction)) %>%
+    mutate(cum = cumsum(fraction)) %>%
+    mutate(target = cum/total_fraction) %>%
+    mutate(block_label = seq(1, block_n, 1)) %>%
+    mutate(above = ifelse(target < pt, 1, 2))
+  
+  
   hookworm = ggplot(data = hookworm_motivated, aes(x = block_label/block_n*90, y = target*100)) +
     geom_line(aes(col = "Hookworm"), cex = 2) +
     geom_line(data = rao_hookworm_motivated , aes(x = block_label/block_n*90, y = target*100, col = "Rao"), cex = 2) + 
     geom_line(data = hookworm_measles_motivated, aes(x = block_label/block_n*90, y = target*100, col = "Measles"), cex = 2) + 
+   # geom_line(data = hookworm_wealth_motivated, aes(x = block_label/block_n*90, y = target*100, col = "Wealth"), cex = 2) + 
     theme_bw() +
     xlab("Clusters targeted") +
     ylab("Percent disease targeted (%)") +
+   # scale_color_manual(values = c("Hookworm" = "black", "Rao" = "#FF4F00", "Measles" = "#0094C6")) +
     scale_color_manual(values = c("Hookworm" = "black", "Rao" = "#FF4F00", "Measles" = "#0094C6")) +
     guides(color =guide_legend(title="Block prioritization strategy")) +
     geom_abline(slope=100/90, intercept = 0, lwd =1, lty = 2, col = "gray72") +
@@ -903,7 +1004,7 @@ for(i in seq_along(methods)){
 }
 
 # Plot efficiency of single-pathogen strategies vs rao strategies. 
-method1_efficiency <- plot_grid(efficiency_list = efficiency_list[[1]], ncol = 2)
+method1_efficiency <- plot_grid(efficiency_list = efficiency_list[[1]])
 method1_efficiency 
 method2_efficiency <- plot_grid(efficiency_list = efficiency_list[[2]], ncol = 2)
 method2_efficiency
@@ -949,35 +1050,11 @@ fig2_bangl_eff <- cowplot::plot_grid(
 
 fig2_bangl_eff
 
+#############################################
+# Simulations 
 
-#### legend 
-#head(parasite_prevalence_block)
-
-#legend2 = ggplot(data = parasite_prevalence_block) +
-#  geom_line(aes(x = block_r, y = presence, col = "Measles-motivated"), cex = 2) + 
-#  geom_line(aes(x = block_r, y = fraction, col = "Single-pathogen motivated"), cex = 2) + 
-#  geom_line(aes(x = block_r, y = even_prevalence, col = "Rao-motivated"), cex = 2) + 
-#  geom_line(aes(x = block_r, y = pop_presence* even_prevalence, col = "Single-pathogen motivated"), cex = 2) + 
-#  scale_color_manual(values = c( "Rao-motivated" = "#FF4F00", 
-#                                "Measles-motivated" = "#0094C6", "Single-pathogen motivated" = "black")) +
-#  guides(color =guide_legend(title="Strategy"))  +
-#  theme(legend.position = "right") +
-#  geom_blank() 
-#legend2
-
-#leg = get_legend(legend2)
-#grid.newpage()
-#legend_only = grid.draw(leg)
-
-#plot_grid(method1_efficiency , legend_only, rel_widths = c(1, .2), labels = "b")
-#legend_only = grid.draw(leg)
-
-
-
-
-
-# simulations (compared to method 1 )
-pt = .5
+# Measles 
+pt = .75 # was .50
 sim_50 <- list()
 
 for(i in 1:1000) {
@@ -1004,15 +1081,13 @@ for(i in 1:1000) {
 measles_vector <- unlist(sim_50)
 measles_sim <- data.frame(measles_vector)
 
-# simulations
-
+# Ascaris 
 sim_50 <- list()
 
 for(i in 1:1000) {
   
   method_df = method1
   compare_strategy = left_join(measles_path1, method_df, by = "block_r")
-  
   
   # rao motivated 
   rao_ascaris_motivated = compare_strategy %>% 
@@ -1034,7 +1109,7 @@ ascaris_vector <- unlist(sim_50)
 ascaris_sim <- data.frame(ascaris_vector)
 
 
-# tt
+# Trichurus 
 sim_50 <- list()
 
 for(i in 1:1000) {
@@ -1062,6 +1137,7 @@ for(i in 1:1000) {
 trichurus_vector <- unlist(sim_50)
 trichurus_sim <- data.frame(trichurus_vector)
 
+# Hookworm
 
 sim_50 <- list()
 
@@ -1091,64 +1167,77 @@ hookworm_vector <- unlist(sim_50)
 hookworm_sim <- data.frame(hookworm_vector)
 
 
-#### boxplot with them all
+# Plot them all 
 print(block_50[[1]])
 
 me_boxplot = measles_sim %>%
   mutate(pathogen = "Measles") %>%
-  mutate(Rao = 42) %>%
-  mutate(Optimal = 38)
+  # mutate(Rao = 42) %>%             # 50 % targeting goal 
+ #  mutate(Optimal = 38)
+  mutate(Rao = 63) %>%               # 75 % targeting goal 
+  mutate(Optimal = 59)
 head(me_boxplot)
 
 as_boxplot = ascaris_sim %>%
   mutate(pathogen = "Ascaris lumbricoides") %>%
-  mutate(Rao = 36) %>%
-  mutate(Optimal = 31) %>%
-  mutate(Measles = 46) 
+#  mutate(Rao = 36) %>%               # 50 % targeting goal 
+#  mutate(Optimal = 31) %>% 
+#  mutate(Measles = 46) 
+  mutate(Rao = 56) %>%               # 75 % targeting goal
+  mutate(Optimal = 53) %>%
+  mutate(Measles = 66) 
 head(as_boxplot )
 
 tt_boxplot = trichurus_sim %>%
   mutate(pathogen = "Trichuris trichiura") %>%
-  mutate(Rao = 19) %>%
-  mutate(Optimal = 14) %>%
-  mutate(Measles = 40) 
+#  mutate(Rao = 19) %>%             # 50 % targeting goal 
+#  mutate(Optimal = 14) %>%
+#  mutate(Measles = 40) 
+  mutate(Rao = 35) %>%              # 75 % targeting goal
+  mutate(Optimal = 27) %>%
+  mutate(Measles = 56) 
 head(tt_boxplot)
 
 hw_boxplot = hookworm_sim %>%
   mutate(pathogen = "Hookworm") %>%
-  mutate(Rao = 23) %>%
-  mutate(Optimal = 19) %>%
-  mutate(Measles = 45) 
+# mutate(Rao = 23) %>%              # 50 % targeting goal 
+#  mutate(Optimal = 19) %>%
+#  mutate(Measles = 45) 
+  mutate(Rao = 41) %>%              # 75 % targeting goal
+  mutate(Optimal = 34) %>%
+  mutate(Measles = 59) 
+head(hw_boxplot)
+
+# Effiency metric 
+(66-56)/66
+(59 - 41)/59
+(56 - 35)/56
 
 target_goal = ggplot(data = me_boxplot) + 
-  geom_violin(aes(x = pathogen, y = measles_vector), draw_quantiles = c(0.25, 0.5, 0.75), fill = "gray95") +
-  # geom_boxplot(aes(x = pathogen, y = malaria_v_vector), fill = "gray95", width=.6) + 
-  geom_point(aes(x = pathogen, y = Rao),  col = "#FF4F00", cex = 6)  + #.5, rao  
-  geom_point(aes(x = pathogen, y = Optimal), col = "black",  cex = 6)  + 
+  geom_violin(aes(x = pathogen, y = (measles_vector/block_n) *100), draw_quantiles = c(0.25, 0.5, 0.75), fill = "gray95") +
+  geom_point(aes(x = pathogen, y = (Rao/block_n)*100),  col = "#FF4F00", cex = 6)  + #.5, rao  
+  geom_point(aes(x = pathogen, y = (Optimal/block_n)*100), col = "black",  cex = 6)  + 
   theme_bw() +
-  ylab("Clusters to target 50% of disease") +
-  geom_violin(data = as_boxplot, aes(x = pathogen, y = malaria_f_vector), draw_quantiles = c(0.25, 0.5, 0.75), fill = "gray95") +
-  # geom_boxplot(data = mf_boxplot, aes(x = pathogen, y = malaria_f_vector), fill = "gray95", width=.6) + 
-  geom_point(data =as_boxplot, aes(x = pathogen, y = Rao), col = "#FF4F00",  cex = 6)  + #.5, rao  
-  geom_point(data = as_boxplot, aes(x = pathogen, y = Optimal), col = "black",  cex = 6)  + 
-  geom_point(data = as_boxplot, aes(x = pathogen, y = Measles), col = "#0094C6",  cex = 6)  + 
-  geom_violin(data = tt_boxplot, aes(x = pathogen, y = strong_vector), draw_quantiles = c(0.25, 0.5, 0.75), fill = "gray95") +
-  # geom_boxplot(data = strong_boxplot, aes(x = pathogen, y = strong_vector), fill = "gray95", width=.6) + 
-  geom_point(data = tt_boxplot, aes(x = pathogen, y = Rao, col = "Rao-motivated"),  cex = 6)  + #.5, rao  
-  geom_point(data = tt_boxplot, aes(x = pathogen, y = Optimal, col = "Single-pathogen motivated"),  cex = 6)  + 
-  geom_point(data = tt_boxplot, aes(x = pathogen, y = Measles, col = "Measles-motivated") , cex = 6)  + 
-  geom_violin(data = hw_boxplot, aes(x = pathogen, y = lf_vector), draw_quantiles = c(0.25, 0.5, 0.75), fill = "gray95") +
-  # geom_boxplot(data = lf_boxplot, aes(x = pathogen, y = lf_vector), fill = "gray95", width=.6) + 
-  geom_point(data = hw_boxplot, aes(x = pathogen, y = Rao), col = "#FF4F00",  cex = 6)  + #.5, rao  
-  geom_point(data = hw_boxplot, aes(x = pathogen, y = Optimal), col = "black", cex = 6)  + 
-  geom_point(data = hw_boxplot, aes(x = pathogen, y = Measles), col = "#0094C6",  cex = 6)  + 
+  ylab("Percents of clusters to target 75% of disease (%)") +
+  geom_violin(data = as_boxplot, aes(x = pathogen, y = (ascaris_vector/block_n)*100), draw_quantiles = c(0.25, 0.5, 0.75), fill = "gray95") +
+  geom_point(data = as_boxplot, aes(x = pathogen, y = (Rao/block_n)*100), col = "#FF4F00",  cex = 6)  + #.5, rao  
+  geom_point(data = as_boxplot, aes(x = pathogen, y = (Optimal/block_n)*100), col = "black",  cex = 6)  + 
+  geom_point(data = as_boxplot, aes(x = pathogen, y = (Measles/block_n)*100), col = "#0094C6",  cex = 6)  + 
+  geom_violin(data = tt_boxplot, aes(x = pathogen, y = (trichurus_vector/block_n)*100), draw_quantiles = c(0.25, 0.5, 0.75), fill = "gray95") +
+  geom_point(data = tt_boxplot, aes(x = pathogen, y = (Rao/block_n)*100, col = "Rao-motivated"),  cex = 6)  + #.5, rao  
+  geom_point(data = tt_boxplot, aes(x = pathogen, y = (Optimal/block_n)*100, col = "Single-pathogen motivated"),  cex = 6)  + 
+  geom_point(data = tt_boxplot, aes(x = pathogen, y = (Measles/block_n)*100, col = "Measles-motivated") , cex = 6)  + 
+  geom_violin(data = hw_boxplot, aes(x = pathogen, y = (hookworm_vector/block_n)*100), draw_quantiles = c(0.25, 0.5, 0.75), fill = "gray95") +
+  geom_point(data = hw_boxplot, aes(x = pathogen, y = (Rao/block_n)*100), col = "#FF4F00",  cex = 6)  + #.5, rao  
+  geom_point(data = hw_boxplot, aes(x = pathogen, y = (Optimal/block_n)*100), col = "black", cex = 6)  + 
+  geom_point(data = hw_boxplot, aes(x = pathogen, y = (Measles/block_n)*100), col = "#0094C6",  cex = 6)  + 
   scale_color_manual(values = c("Rao-motivated" = "#FF4F00", "Single-pathogen motivated" = "black",
                              "Measles-motivated" = "#0094C6" )) +
   scale_fill_manual(values = c("Rao-motivated" = "#FF4F00", "Single-pathogen motivated" = "black",
                         "Measles-motivated" = "#0094C6" )) +
   guides(color =guide_legend(title="Strategy")) +
   xlab("Pathogen") +
-  ggtitle("b.") +
+  ggtitle("b") +
   theme(axis.text = element_text(size = 11, color = "black"),
         axis.title = element_text(size = 14, color = "black"),
         axis.line = element_blank(),
@@ -1164,16 +1253,18 @@ target_goal = ggplot(data = me_boxplot) +
         strip.background = element_rect(colour="white", fill="white"),
         panel.border = element_rect(colour = "black", fill=NA))  +
   scale_y_continuous(breaks = c(0, 20, 40, 60, 80))  +
-  ylim(c(0, 80))
+ # ylim(c(0, 80))
+  ylim(c(0, 100))
 target_goal 
 
 
-## Bootstrapping figure d 
+###################################################################
+## Bootstrapping clusters with replacement to assess rao vs optimal
 # Measles 
 head(measles_path1)
 print(unique(measles_path1$pathogen))
 
-pt = .5
+pt = .75
 store_statistic = list()
 
 for(j in 1:200){
@@ -1277,24 +1368,18 @@ for(j in 1:200){
   
   # rao motivated 
   rao_motivated =  compare_strategy_replace %>% 
-    filter(pathogen == "tt") %>%
-    arrange(-rao) %>%
+    filter(pathogen == "al") %>%
+   arrange(-rao) %>%
     mutate(total_fraction = sum(fraction)) %>%
     mutate(cum = cumsum(fraction)) %>%
     mutate(target = cum/total_fraction) %>%
     mutate(block_label = seq(1, block_n, 1)) %>%
     mutate(above = ifelse(target < pt, 1, 2))
- # auc_malf_rao <- trapz(rao_malf_motivated$block_label/psuid_n, rao_malf_motivated$target)
-  
-  # for AUC 
-  # statistic = auc_malf - auc_malf_rao  
-  #statistic = auc_malf 
-  #  statistic = auc_malf_rao   
-  #  print(statistic)
+#  auc_malf_rao <- trapz(rao_malf_motivated$block_label/psuid_n, rao_malf_motivated$target)
   
   #blocks needed
- # blocks_needed <- which(single_motivated$above == 2)[1]  # optimal
-  blocks_needed <- which(rao_motivated$above == 2)[1] # rao
+  blocks_needed <- which(single_motivated$above == 2)[1]  # optimal
+ # blocks_needed <- which(rao_motivated$above == 2)[1] # rao
   
   print(blocks_needed)
   
@@ -1314,29 +1399,16 @@ quant_50 = quantile(block_list$block_vector, probs = quantiles[2])
 quant_975 = quantile(block_list$block_vector, probs = quantiles[3])
 
 #################################################################
-
-# Save outputs manually 
-# Measles 
-# optimal: 38 (36, 39)
-# rao:     41 (39, 43)
-
-# Ascaris 
-# optimal: 31 (28, 33)
-# rao:     35 (32, 39)
-
-# Hookworm
-# Optimal: 19 (16, 22)
-# Rao:     23 (19, 27)
-
-# T. trichurus
-# Optimal: 15 (12, 17)
-# Rao:     19 (14, 25)
-
+# 75% 
+# trichurus; rao: 37 (29, 49).  optimal: 27 (23, 32)
+# hw:        rao: 41 (34, 48).  optimal: 34 (30, 39)
+# ascaris:   rao: 56 (53, 59).  optimal: 53 (49, 56)
+# measles:   rao: 63 (61, 66).  optimal: 59 (57, 61)
 
 # make into line plot 
-mean = c( 35, 31, 23, 19, 41, 38, 19, 15 )
-lower = c(32, 28, 19, 16, 39, 36, 14, 12 )
-upper = c(39, 33, 27, 22, 43, 39, 25, 17 )
+mean = c( 56, 53, 41, 34, 63, 59, 37, 27)
+lower = c(53, 49, 34, 30, 61, 57, 29, 23 )
+upper = c (59, 56,48, 39, 69, 61, 49, 32)
 path = c( "Ascaris lumbricoides", "Ascaris lumbricoides", "Hookworm", "Hookworm", 
           "Measles", "Measles", "Trichuris trichiura", "Trichuris trichiura")
 strat = c( "Rao-motivated", "Single-pathogen motivated", "Rao-motivated", "Single-pathogen motivated", "Rao-motivated", "Single-pathogen motivated", "Rao-motivated", "Single-pathogen motivated")
@@ -1344,17 +1416,17 @@ strat = c( "Rao-motivated", "Single-pathogen motivated", "Rao-motivated", "Singl
 
 paths = data.frame(mean, lower, upper, path, strat)
 paths$path = factor(paths$path, levels = c( "Ascaris lumbricoides", "Hookworm", "Measles", "Trichuris trichiura"))
-paths$strat = factor(paths$strat, levels = c("Single-pathogen motivated", "Rao-motivated"))
-bootstrap = ggplot(data = paths, aes(x = path, y = mean, col = strat)) + 
+paths$strat = factor(paths$strat, levels = c( "Rao-motivated", "Single-pathogen motivated"))
+bootstrap = ggplot(data = paths, aes(x = path, y = (mean/90)*100, col = strat)) + 
   theme_light()+
   geom_point( position=position_dodge(.5), cex = 2) +
   # ylab("Area under efficiency curve")+
-  ylab("Clusters to target 50% of disease")+
+  ylab("Percent of clusters to target 75% of disease (%)")+
   theme(axis.text=element_text(size=12)) +
-  geom_errorbar(aes(ymin=lower, ymax=upper), width=.4,
+  geom_errorbar(aes(ymin= (lower/90)*100, ymax= (upper/90)*100), width=.4,
                 position=position_dodge(.5), lwd= 1) + 
   xlab("Pathogen") +
-  ggtitle("c.") +
+  ggtitle("c") +
   theme(axis.text = element_text(size = 11, color = "black"),
         axis.title = element_text(size = 14, color = "black"),
         axis.line = element_blank(),
@@ -1371,14 +1443,15 @@ bootstrap = ggplot(data = paths, aes(x = path, y = mean, col = strat)) +
         strip.background = element_rect(colour="white", fill="white"),
         panel.border = element_rect(colour = "black", fill=NA)) +
   guides(color =guide_legend(title="Strategy")) +
-  scale_color_manual(values = c( "black", "#FF4F00")) +
-  scale_y_continuous(breaks = c(0, 20, 40, 60, 80))  +
-  ylim(c(0, 80))
+  scale_color_manual(values = c(  "#FF4F00", "black")) +
+  scale_y_continuous(breaks = c(0, 20, 40, 60, 80, 100))  +
+  ylim(c(0, 100))
 bootstrap
 
 figure_2_bangl = plot_grid(target_goal, bootstrap, rel_widths = c(.75, .75))
 figure_2_bangl
 
+fig2_bangl_eff
 
 plot_grid(fig2_bangl_eff, figure_2_bangl, labels = c("a"), 
           nrow = 2, rel_heights =c(.5, .3))
@@ -1427,6 +1500,27 @@ bangl_map <- countries[countries$name == "Bangladesh", ]
 # ######################################
 # Rao 
 ########################################
+
+# mean neighbors 
+coords <- as.matrix(method1[, c("med_qgpslong", "med_qgpslat")])
+print(coords)
+# Calculate full distance matrix (in meters)
+dist_matrix <- distm(coords, fun = distHaversine)  # Returns meters
+
+# Set diagonal to NA to ignore self-distance
+diag(dist_matrix) <- NA
+
+# Calculate mean distance to k nearest neighbors (e.g., 3)
+k <- 3
+mean_knn_distances <- apply(dist_matrix, 1, function(x) {
+  mean(sort(x, na.last = NA)[1:k])
+})
+# Add to original data frame (converted to km)
+mean_knn_radius_km <- mean_knn_distances / 1000
+summary(mean_knn_radius_km )
+
+
+#### now plot 
 plot_list <- list()
 methods = list(method1 = method1)
 head(method1)
@@ -1522,17 +1616,32 @@ for(i in seq_along(methods)){
   
   max_val = max(b_preds_rao_raster2$value)
   
+  r_ext = extent(b_preds_rao_raster)
+  r_poly = as(r_ext, "SpatialPolygons")
+  crs(r_poly) = crs(b_preds_rao_raster)
+  r_sf = st_as_sf(r_poly)
+  
+  admin_b_study <- st_transform(admin_b_study, crs = st_crs(r_sf))
+  
+  # Keep only districts that intersect the raster extent
+  districts_in_raster <- admin_b_study[r_sf, , op = st_intersects]
+  
+  # OR: clip the districts to the raster extent
+  districts_clipped <- st_intersection(admin_b_study, cl_buff)
+  
   map_rao <- ggplot(data= b_preds_rao_raster2) + 
    # geom_sf(data = bangl_map, fill = NA, color = "black", size = 15, lwd = 1) +  # Black border for country
-    geom_tile(aes(x=x,y=y,fill=value), na.rm=TRUE) +
    # ggtitle("Method", i) +
     coord_sf(crs = 4326)  +
+    geom_tile(aes(x=x,y=y,fill=value), na.rm=TRUE) +
+    geom_sf(data = admin_b_study, fill = NA,  color = alpha("black", 0.20), lwd = .75) +
+  #  geom_sf(data = districts_clipped, fill = NA, color = "black", lwd = 1.2) +
   scale_fill_gradientn(colours = pal,
                        limits = c(0, max_val),
                        # na.value = NA,
                        breaks = seq(0, max_val, by = 1), 
                        guide = guide_colorbar(
-                         title = "Rao's quadratic entropy",
+                         title = "Rao's quadratic index",
                          title.position = "top",
                          title.hjust = 0.5,
                          direction = "horizontal",
@@ -1544,13 +1653,16 @@ for(i in seq_along(methods)){
                          ticks.linewidth = 1,
                          frame.colour = "white") )  + # +
     labs(x = "Latitude", y = "Longitude") +
+    xlim(c(89.8, 90.9)) +
+    ylim(c(23.75, 25.05)) +
     theme_minimal() +
-    ggtitle("Rao's quadratic entropy") +
+    ggtitle("Rao's quadratic index") +
     theme(
      legend.position = "bottom",
       plot.tag = element_text(face = "bold", size = 16)
     )  +
-    theme( plot.title = element_text(colour = "black", size = 14.5, face = "bold")) 
+    theme( plot.title = element_text(colour = "black", size = 14.5, face = "bold")) +
+    geom_sf(data = districts_clipped, fill = NA, color = "black", lwd = 1.0)  
   
   
   
@@ -1607,8 +1719,8 @@ bangladesh_locations = rbind(parasite, measles) %>%
 head(bangladesh_locations)
 
 maps_i = c( "al", "hw", "tt", "measles")
-path_names = c( "Ascaris lumbricoides", "Hookworm",  "Trichuris trichiura", "Measles")
-legend_names = c("Proportion infected (%)", "Proportion infected (%)", "Proportion infected (%)", "Fraction unvaccinated (%)")
+path_names = c( "Ascaris lumbricoides", "Hookworm",  "Trichuris trichiura", "Measles partially unvaccinated")
+legend_names = c("Proportion infected (%)", "Proportion infected (%)", "Proportion infected (%)", "Fraction partially unvaccinated (%)")
 
 plot_list <- list()
 
@@ -1685,15 +1797,30 @@ for(i in 1:length(maps_i)) {
   
   max_val = max(b_preds_rao_raster2$value)
   
+  r_ext = extent(b_preds_rao_raster)
+  r_poly = as(r_ext, "SpatialPolygons")
+  crs(r_poly) = crs(b_preds_rao_raster)
+  r_sf = st_as_sf(r_poly)
+  
+  admin_b_study <- st_transform(admin_b_study, crs = st_crs(r_sf))
+  
+  # Keep only districts that intersect the raster extent
+  districts_in_raster <- admin_b_study[r_sf, , op = st_intersects]
+  
+  # OR: clip the districts to the raster extent
+  districts_clipped <- st_intersection(admin_b_study, cl_buff)
+  
   # Plotting
   map <- ggplot(data = b_preds_rao_raster2 %>%
                  # mutate(value = replace(value, value < 0, 0)) %>%
                   drop_na(value) %>%
                   mutate(value = value*100)) +  
-    geom_tile(aes(x = x, y = y, fill = value), na.rm = TRUE) +
   #  geom_sf(data = bangl_map, fill = NA, color = "black", size = 15, lwd = 1) +  # Black border for country
     ggtitle(path_names[i]) +  # Now using path_names[i] directly
     coord_sf(crs = 4326) +
+    geom_tile(aes(x=x,y=y,fill=value), na.rm=TRUE) +
+    geom_sf(data = admin_b_study, fill = NA,  color = alpha("black", 0.15), lwd = .75) +
+  #  geom_sf(data = districts_clipped, fill = NA, color = "black", lwd = .75) +
     scale_fill_gradientn(colours = pal,
                          limits = c(0, 100),
                          na.value = NA,
@@ -1713,11 +1840,14 @@ for(i in 1:length(maps_i)) {
                            frame.colour = "white") ) +
     labs(x = "Latitude", y = "Longitude") +
     theme_minimal() +
+    xlim(c(89.8, 90.9)) +
+    ylim(c(23.75, 25.05)) +
     theme(
       legend.position = "bottom",
       plot.tag = element_text(face = "bold", size = 16)
     )   +
-    theme( plot.title = element_text(colour = "black", size = 13.5, face = "bold")) 
+    theme( plot.title = element_text(colour = "black", size = 12.5, face = "bold")) +
+    geom_sf(data = districts_clipped, fill = NA, color = "black", lwd = 1.0)  
   
   plot_list[[i]] = map
 }
@@ -1731,10 +1861,104 @@ figure_1_bangl
 
 # 1400 x 1000
 
+# Assess actual feasible path
+head(method1)
+bangl_locations_order = method1 %>%
+  arrange(-rao) %>% 
+  mutate(order = row_number())
+head(bangl_locations_order )
+22.5*3
+
+ggplot(bangl_locations_order %>% filter(order >  68), aes(x = med_qgpslong, y = med_qgpslat)) +
+  geom_path(aes(group = 1), color = "blue", size = 1) +  # Connect points
+  geom_point(color = "red", size = 3) +  # Plot points
+  geom_text(aes(label = round(rao, 2)), vjust = -1) +  # Label with rao
+  labs(title = "Path from Highest to Lowest rao: Quartile 4",
+       x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+ggplot(bangl_locations_order %>% filter(rao > 0), aes(x = med_qgpslong, y = med_qgpslat)) +
+  geom_path(aes(group = 1), color = "blue", size = 1) +  # Connect points
+  geom_point(color = "red", size = 3) +  # Plot points
+  geom_text(aes(label = round(rao, 2)), vjust = -1) +  # Label with rao
+  labs(title = "Path from Highest to Lowest rao",
+       x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+#######################################################
+########## Plot the locations of study sites
+
+gps_dat = read_dta(file = here("data/bangl/gps/untouched", "6. WASHB_Baseline_gps.dta")) %>%
+  mutate(dataid = as.numeric(dataid)) %>% # had to add later? 
+  left_join(public_ids, by = "dataid") %>% 
+  dplyr::select(block, block_r, qgpslong, qgpslat) %>%
+  group_by(block) %>%
+  mutate(med_qgpslong = median(qgpslong), med_qgpslat = median(qgpslat)) %>%
+  distinct(block, block_r, med_qgpslong, med_qgpslat)
+head(gps_dat)
+
+bangl_sampling = ggplot() + 
+  geom_sf(data = districts_clipped, fill = NA, color = "black", lwd = .75)  +
+  theme_bw() +
+  geom_point(data = gps_dat, aes(x = med_qgpslong, y = med_qgpslat), col = "darkred", fill = "red", cex = 3, pch = 23) +
+  xlab("Longitude") +
+  ylab("Latitude") + ggtitle("Bangladesh")
+bangl_sampling
+
+plot_grid(bangl_sampling, cam_sampling)
 
 
+############################################
+# IQR for prevalence across clusters 
+
+# Number of non-NA measurements assessed total by pathogen 
+parasite_denom = disease_dat %>%
+  pivot_longer(cols=c('al', 'tt', 'hw', 'giar', 'poscr', 'poseh', 'sth'),
+               names_to='pathogen',
+               values_to='presence') %>%
+  group_by(block, pathogen) %>% # assess by overall prevalence in population
+  summarise(non_na_count_block = sum(!is.na(presence))) %>%
+  filter(pathogen != "sth" & pathogen != "giar" & pathogen != "poscr" & pathogen != "poseh")
+head(parasite_denom)
 
 
+# Number of parasite instances by block
+parasite_numer = disease_dat %>%
+  pivot_longer(cols=c('al', 'tt', 'hw', 'giar', 'poscr', 'poseh', 'sth'),
+               names_to='pathogen',
+               values_to='presence') %>%
+  group_by(block, pathogen) %>%
+  summarize(across(presence, ~sum(.x, na.rm = TRUE))) %>%
+  filter(pathogen != "sth" & pathogen != "giar" & pathogen != "poscr" & pathogen != "poseh")
+head(parasite_numer)
+
+# prev 
+prev_block = left_join(parasite_numer, parasite_denom, by = c("block", "pathogen") ) %>%
+  mutate(prev_block = presence/non_na_count_block) %>%
+  filter(pathogen == "tt")
+summary(prev_block$prev_block)
+# AL: (30.1, 49.6)
+# hw: 9.3 (3.2, 14.2)
+# tt: 7.4 (0.0, 11.1)
+
+# Measles vaccination. 
+measles_denom_block = vax %>%
+  group_by(block_r) %>%
+  summarise(non_na_count = sum(!is.na(measles))) %>%
+  mutate(pathogen = "measles")
+head(measles_denom_block)
+
+measles_numer_block = vax %>%
+  group_by(block_r) %>%
+  summarize(across(measles, ~sum(.x, na.rm = TRUE))) %>%
+  mutate(presence = measles, pathogen = "measles") %>%
+  dplyr::select(-measles)
+head(measles_numer_block)
+
+prev_measles = left_join(measles_denom_block, measles_numer_block, by = c("pathogen", "block_r")) %>%
+  mutate(unvaccinated = non_na_count - presence) %>%
+  mutate(prev_unvaccinated = unvaccinated/non_na_count)
+summary(prev_measles$prev_unvaccinated)
 
 
 
