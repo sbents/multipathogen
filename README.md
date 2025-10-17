@@ -2,16 +2,24 @@ A framework for guiding integrated disease control measures through multipathoge
 
 Samantha J. Bents, sjbents@stanford.edu
 
+______________________________________________________________________________________________________________________________________________________
+
 Overview
 Global health programs have traditionally focused on single diseases. There is potential for synergy through integrated intervention delivery, particularly in areas with overlapping geographic disease burden, but there is limited methodology developed for guiding integrated delivery and assessing efficiency gains through integration. Here, we applied a measure of diversity, Rao’s quadratic index, to quantify multipathogen burden across two large-scale surveys: Bangladesh (90 clusters, 2,396 children) and Cambodia (100 clusters, 2,150 women). In both settings, we observed geographic clustering of multiple pathogens, indicating potential for more efficient, integrated disease control strategies. We assessed the efficiency of a multipathogen-targeted strategy compared to traditional single-pathogen approaches by calculating the percent reduction in the number of spatial clusters needed to reach 75% of the disease burden (infections or unvaccinated individuals) in a hypothetical intervention. In Bangladesh, integrating deworming with measles vaccination guided by Rao’s quadratic index improved efficiency by 15% for Ascaris lumbricoides, 31% for hookworm, and 38% for Trichuris trichiura, compared to a measles-focused approach. In Cambodia, a Rao-guided strategy performed similarly to the best single-pathogen strategy for Strongyloides stercoralis, and reduced the number of spatial clusters that would need to be targeted by 57% (lymphatic filariasis), 83% (Plasmodium falciparum), and 59% (Plasmodium vivax). We also found that higher multipathogen burden was significantly associated with lower household wealth, suggesting that Rao-guided strategies may more effectively reach under-resourced populations. These findings support the use of multipathogen burden metrics to guide integrated program delivery, offering potential for greater efficiency in disease control. 
+
+______________________________________________________________________________________________________________________________________________________
 
 Software requirements
 
 All analyses were conducted in R Studio Version 2024.12.1+563 (2024.12.1+563).
 
+______________________________________________________________________________________________________________________________________________________
+
 Installation Guide
 
 R Studio can be installed at this link: https://posit.co/download/rstudio-desktop/. Typical installation is under ten minutes using an updated operating system.
+
+______________________________________________________________________________________________________________________________________________________
 
 Demo
 
